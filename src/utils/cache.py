@@ -1,90 +1,77 @@
-from datetime import datetime, timedelta
+import time
 from typing import Any, Dict
 
 class Cache:
     def __init__(self, ttl: int = 60):  # 1 minute default TTL
         """
-        Initialize the cache with a time-to-live (TTL) value.
-
-        Args:
-        ttl (int): The time-to-live value in seconds. Defaults to 60.
+        Initialize the cache with a given TTL (time to live) in seconds.
+        
+        :param ttl: Time to live in seconds
         """
+        self.cache: Dict[str, Any] = {}
         self.ttl = ttl
-        self.cache: Dict[str, Dict[str, Any]] = {}
 
     def get(self, key: str) -> Any:
         """
-        Retrieve a value from the cache.
-
-        Args:
-        key (str): The key of the cached value.
-
-        Returns:
-        Any: The cached value if it exists and is not expired, otherwise None.
+        Get a value from the cache by its key.
+        
+        :param key: Cache key
+        :return: Cached value or None if not found or expired
         """
         if key in self.cache:
-            value = self.cache[key]
-            if value["expires"] > datetime.now():
-                return value["data"]
+            value, expiry = self.cache[key]
+            if time.time() < expiry:
+                return value
             else:
                 del self.cache[key]
         return None
 
-    def set(self, key: str, data: Any) -> None:
+    def set(self, key: str, value: Any) -> None:
         """
-        Store a value in the cache.
-
-        Args:
-        key (str): The key of the cached value.
-        data (Any): The value to be cached.
+        Set a value in the cache with a given key.
+        
+        :param key: Cache key
+        :param value: Value to cache
         """
-        expires = datetime.now() + timedelta(seconds=self.ttl)
-        self.cache[key] = {"data": data, "expires": expires}
+        expiry = time.time() + self.ttl
+        self.cache[key] = (value, expiry)
 
     def delete(self, key: str) -> None:
         """
-        Remove a value from the cache.
-
-        Args:
-        key (str): The key of the cached value.
+        Delete a value from the cache by its key.
+        
+        :param key: Cache key
         """
         if key in self.cache:
             del self.cache[key]
 
-# Create a cache instance with a 5-minute TTL
-cache = Cache(ttl=300)
+cache = Cache(ttl=300)  # 5 minutes TTL
 
-def get_cached_response(key: str) -> Any:
+def get_cached_api_response(endpoint: str, params: Dict[str, str]) -> Any:
     """
-    Retrieve a cached API response.
-
-    Args:
-    key (str): The key of the cached response.
-
-    Returns:
-    Any: The cached response if it exists and is not expired, otherwise None.
+    Get a cached API response for a given endpoint and parameters.
+    
+    :param endpoint: API endpoint
+    :param params: API request parameters
+    :return: Cached API response or None if not found or expired
     """
+    key = f"{endpoint}?{','.join(f'{k}={v}' for k, v in params.items())}"
     return cache.get(key)
 
-def cache_response(key: str, data: Any) -> None:
+def cache_api_response(endpoint: str, params: Dict[str, str], response: Any) -> None:
     """
-    Cache an API response.
-
-    Args:
-    key (str): The key of the cached response.
-    data (Any): The response to be cached.
+    Cache an API response for a given endpoint and parameters.
+    
+    :param endpoint: API endpoint
+    :param params: API request parameters
+    :param response: API response to cache
     """
-    cache.set(key, data)
-
-def invalidate_cache(key: str) -> None:
-    """
-    Invalidate a cached response.
-
-    Args:
-    key (str): The key of the cached response.
-    """
-    cache.delete(key)
+    key = f"{endpoint}?{','.join(f'{k}={v}' for k, v in params.items())}"
+    cache.set(key, response)
 
 # Example usage:
-# cache_response("budgeting_data", {"income": 1000, "expenses": 500})
-# print(get_cached_response("budgeting_data"))  # Output: {"income": 1000, "expenses": 500}
+# from src.utils.cache import cache_api_response, get_cached_api_response
+# response = get_cached_api_response('/api/endpoint', {'param1': 'value1', 'param2': 'value2'})
+# if response is None:
+#     response = fetch_api_response('/api/endpoint', {'param1': 'value1', 'param2': 'value2'})
+#     cache_api_response('/api/endpoint', {'param1': 'value1', 'param2': 'value2'}, response)
