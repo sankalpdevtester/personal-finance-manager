@@ -1,81 +1,122 @@
 # src/feature/financial_goals.py
-
-from src.models.user import User
-from src.utils.helpers import calculate_savings_progress
-from src.main import db
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
 from typing import List
+from src.models import User, FinancialGoal
+from src.utils.auth import get_current_user
+from src.api import auth
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.requests import Request
+from pydantic import BaseModel
 
-# Define the Financial Goal model
-class FinancialGoal(BaseModel):
-    id: int
-    user_id: int
-    goal_name: str
-    target_amount: float
-    current_amount: float
-    deadline: str
-
-# Define the Financial Goal router
 router = APIRouter()
 
-# Define the OAuth2 scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+class FinancialGoalRequest(BaseModel):
+    name: str
+    target_amount: float
+    deadline: str
 
-# Get all financial goals for a user
-@router.get("/financial-goals/")
-async def get_financial_goals(user: User = Depends()):
-    financial_goals = db.query(FinancialGoal).filter(FinancialGoal.user_id == user.id).all()
-    return financial_goals
+class FinancialGoalResponse(BaseModel):
+    id: int
+    name: str
+    target_amount: float
+    deadline: str
+    progress: float
 
-# Create a new financial goal
 @router.post("/financial-goals/")
-async def create_financial_goal(goal: FinancialGoal, user: User = Depends()):
-    new_goal = FinancialGoal(
-        user_id=user.id,
-        goal_name=goal.goal_name,
-        target_amount=goal.target_amount,
-        current_amount=0.0,
-        deadline=goal.deadline
+async def create_financial_goal(request: FinancialGoalRequest, current_user: User = Depends(get_current_user)):
+    financial_goal = FinancialGoal(
+        name=request.name,
+        target_amount=request.target_amount,
+        deadline=request.deadline,
+        user_id=current_user.id
     )
-    db.add(new_goal)
-    db.commit()
-    return new_goal
+    financial_goal.save()
+    return JSONResponse(content={"message": "Financial goal created successfully"}, status_code=201)
 
-# Update a financial goal
+@router.get("/financial-goals/")
+async def get_financial_goals(current_user: User = Depends(get_current_user)):
+    financial_goals = FinancialGoal.filter(user_id=current_user.id)
+    response = []
+    for goal in financial_goals:
+        response.append({
+            "id": goal.id,
+            "name": goal.name,
+            "target_amount": goal.target_amount,
+            "deadline": goal.deadline,
+            "progress": goal.progress
+        })
+    return JSONResponse(content=response, status_code=200)
+
+@router.get("/financial-goals/{goal_id}")
+async def get_financial_goal(goal_id: int, current_user: User = Depends(get_current_user)):
+    financial_goal = FinancialGoal.get(id=goal_id)
+    if financial_goal.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You do not have permission to access this financial goal")
+    return JSONResponse(content={
+        "id": financial_goal.id,
+        "name": financial_goal.name,
+        "target_amount": financial_goal.target_amount,
+        "deadline": financial_goal.deadline,
+        "progress": financial_goal.progress
+    }, status_code=200)
+
 @router.put("/financial-goals/{goal_id}")
-async def update_financial_goal(goal_id: int, goal: FinancialGoal, user: User = Depends()):
-    financial_goal = db.query(FinancialGoal).filter(FinancialGoal.id == goal_id).first()
-    if financial_goal is None:
-        raise HTTPException(status_code=404, detail="Financial goal not found")
-    if financial_goal.user_id != user.id:
+async def update_financial_goal(goal_id: int, request: FinancialGoalRequest, current_user: User = Depends(get_current_user)):
+    financial_goal = FinancialGoal.get(id=goal_id)
+    if financial_goal.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You do not have permission to update this financial goal")
-    financial_goal.goal_name = goal.goal_name
-    financial_goal.target_amount = goal.target_amount
-    financial_goal.deadline = goal.deadline
-    db.commit()
-    return financial_goal
+    financial_goal.name = request.name
+    financial_goal.target_amount = request.target_amount
+    financial_goal.deadline = request.deadline
+    financial_goal.save()
+    return JSONResponse(content={"message": "Financial goal updated successfully"}, status_code=200)
 
-# Delete a financial goal
 @router.delete("/financial-goals/{goal_id}")
-async def delete_financial_goal(goal_id: int, user: User = Depends()):
-    financial_goal = db.query(FinancialGoal).filter(FinancialGoal.id == goal_id).first()
-    if financial_goal is None:
-        raise HTTPException(status_code=404, detail="Financial goal not found")
-    if financial_goal.user_id != user.id:
+async def delete_financial_goal(goal_id: int, current_user: User = Depends(get_current_user)):
+    financial_goal = FinancialGoal.get(id=goal_id)
+    if financial_goal.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You do not have permission to delete this financial goal")
-    db.delete(financial_goal)
-    db.commit()
-    return {"message": "Financial goal deleted successfully"}
+    financial_goal.delete_instance()
+    return JSONResponse(content={"message": "Financial goal deleted successfully"}, status_code=200)
+```
+To integrate this new feature with the existing files, you would need to add the following code to the `src/main.py` file:
+```python
+from src.feature.financial_goals import router as financial_goals_router
 
-# Get the progress of a financial goal
-@router.get("/financial-goals/{goal_id}/progress")
-async def get_financial_goal_progress(goal_id: int, user: User = Depends()):
-    financial_goal = db.query(FinancialGoal).filter(FinancialGoal.id == goal_id).first()
-    if financial_goal is None:
-        raise HTTPException(status_code=404, detail="Financial goal not found")
-    if financial_goal.user_id != user.id:
-        raise HTTPException(status_code=403, detail="You do not have permission to view this financial goal")
-    progress = calculate_savings_progress(financial_goal.current_amount, financial_goal.target_amount)
-    return {"progress": progress}
+app.include_router(financial_goals_router)
+```
+And add the following code to the `src/models.py` file:
+```python
+from peewee import Model, IntegerField, CharField, FloatField, DateTimeField, ForeignKey
+
+class FinancialGoal(Model):
+    id = IntegerField(primary_key=True)
+    name = CharField()
+    target_amount = FloatField()
+    deadline = DateTimeField()
+    user = ForeignKey(User, related_name="financial_goals")
+    progress = FloatField(default=0.0)
+
+    class Meta:
+        database = db
+```
+You would also need to add the following code to the `src/feature/financial_insights.py` file to calculate the progress of the financial goals:
+```python
+from src.feature.financial_goals import FinancialGoal
+
+def calculate_financial_goal_progress(financial_goal: FinancialGoal):
+    # Calculate the progress of the financial goal based on the user's transactions
+    progress = 0.0
+    # ...
+    return progress
+```
+And finally, you would need to add the following code to the `src/routes/users.py` file to display the financial goals in the user's dashboard:
+```python
+from src.feature.financial_goals import FinancialGoal
+
+@app.get("/users/{user_id}/dashboard")
+async def get_user_dashboard(user_id: int):
+    user = User.get(id=user_id)
+    financial_goals = FinancialGoal.filter(user_id=user_id)
+    # ...
+    return JSONResponse(content={"financial_goals": financial_goals}, status_code=200)
