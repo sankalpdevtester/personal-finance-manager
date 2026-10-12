@@ -1,4 +1,3 @@
-```python
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
@@ -96,4 +95,3 @@ class FinancialGoal(Base):
 # Create all tables in the engine
 # This is equivalent to "Create Table" statements in raw SQL
 # Base.metadata.create_all(engine)
-```

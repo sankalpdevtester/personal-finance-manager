@@ -1,4 +1,3 @@
-```python
 from datetime import datetime
 from typing import Dict
 
@@ -25,4 +24,3 @@ def calculate_investment_returns(investment_data: Dict) -> float:
         return 0
 
     return ((current_value - initial_amount) / initial_amount) / time_period * 100
-```
